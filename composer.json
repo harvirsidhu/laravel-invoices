@@ -21,7 +21,13 @@
         "dompdf/dompdf": "^3.1",
         "elegantly/laravel-money": "^4.0.0",
         "illuminate/contracts": "^13.0",
-        "spatie/laravel-package-tools": "^1.14"
+        "spatie/laravel-package-tools": "^1.14",
+        "spatie/laravel-pdf": "^2.0"
+    },
+    "suggest": {
+        "spatie/browsershot": "Required to use the 'browsershot' driver (real Chromium rendering). Needs Node.js + Chromium.",
+        "chrome-php/chrome": "Required to use the 'chrome' driver. Needs a local Chrome/Chromium binary.",
+        "pontedilana/php-weasyprint": "Required to use the 'weasyprint' driver. Needs the WeasyPrint binary."
     },
     "require-dev": {
         "larastan/larastan": "^3.0",

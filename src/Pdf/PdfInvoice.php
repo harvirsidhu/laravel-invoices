@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace Elegantly\Invoices\Pdf;
 
 use Brick\Math\RoundingMode;
-use Brick\Money\AllocationMode;
 use Brick\Money\Money;
 use Carbon\CarbonInterface;
-use Dompdf\Dompdf;
 use Elegantly\Invoices\Concerns\FormatForPdf;
 use Elegantly\Invoices\Contracts\HasLabel;
 use Elegantly\Invoices\Enums\InvoiceState;
@@ -23,6 +21,7 @@ use Illuminate\Http\Response;
 use Illuminate\Mail\Attachment;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
+use Spatie\LaravelPdf\Facades\Pdf;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 
 class PdfInvoice implements Attachable
@@ -30,6 +29,8 @@ class PdfInvoice implements Attachable
     use FormatForPdf;
 
     public string $template;
+
+    public ?string $driver = null;
 
     /**
      * @param  array<string, mixed>  $fields  Additianl fileds to display in the header
@@ -62,7 +63,10 @@ class PdfInvoice implements Attachable
         public array $templateData = [],
 
         public ?string $logo = null,
+
+        ?string $driver = null,
     ) {
+        $this->driver = $driver;
         // @phpstan-ignore-next-line
         $this->logo = $logo ?? config('invoices.pdf.logo') ?? config('invoices.default_logo');
         // @phpstan-ignore-next-line
@@ -152,7 +156,7 @@ class PdfInvoice implements Attachable
             return Money::of(0, $this->getCurrency());
         }
 
-        $allocatedDiscounts = $totalDiscount->allocate($ratios, AllocationMode::FloorToFirst);
+        $allocatedDiscounts = $totalDiscount->allocate(...$ratios);
 
         $totalTaxAmount = Money::of(0, $this->getCurrency());
 
@@ -167,12 +171,16 @@ class PdfInvoice implements Attachable
 
                 $itemDiscount = $allocatedDiscounts[$index];
 
+                $configRoundingMode = config('invoices.rounding_mode');
+                $roundingMode = $configRoundingMode instanceof RoundingMode
+                    ? $configRoundingMode
+                    : RoundingMode::HalfUp;
+
                 $itemTaxAmount = $item->subTotalAmount()
                     ->minus($itemDiscount)
                     ->multipliedBy(
                         (string) ($item->tax_percentage / 100.0),
-                        // @phpstan-ignore-next-line
-                        config('invoices.rounding_mode', RoundingMode::HalfUp)
+                        $roundingMode,
                     );
 
             } else {
@@ -192,40 +200,35 @@ class PdfInvoice implements Attachable
     }
 
     /**
-     * @param  array<string, mixed>  $options
-     * @param  array{ size?: string, orientation?: string }  $paper
-     * @param  array<string, mixed>  $data
+     * Set the spatie/laravel-pdf driver used to render this invoice.
+     * When null, spatie's own config (laravel-pdf.driver / LARAVEL_PDF_DRIVER) is used.
      */
-    public function pdf(array $options = [], array $paper = [], array $data = []): Dompdf
+    public function driver(?string $driver): static
     {
+        $this->driver = $driver;
 
-        $pdf = new Dompdf(array_merge(
-            // @phpstan-ignore-next-line
-            config('invoices.pdf.options') ?? config('invoices.pdf_options') ?? [],
-            $options,
-        ));
-
-        $pdf->setPaper(
-            // @phpstan-ignore-next-line
-            $paper['size'] ?? config('invoices.pdf.paper.size') ?? config('invoices.pdf.paper.paper') ?? config('invoices.paper_options.paper') ?? 'a4',
-            // @phpstan-ignore-next-line
-            $paper['orientation'] ?? config('invoices.pdf.paper.orientation') ?? config('invoices.paper_options.orientation') ?? 'portrait'
-        );
-
-        $html = $this->view($data)->render();
-
-        $pdf->loadHtml($html);
-
-        return $pdf;
+        return $this;
     }
 
-    public function getPdfOutput(): ?string
+    public function getPdfOutput(): string
     {
-        $pdf = $this->pdf();
+        $html = $this->view()->render();
 
-        $pdf->render();
+        /** @var array{ size?: string, orientation?: string } $paper */
+        $paper = config('invoices.pdf.paper') ?? [];
 
-        return $pdf->output();
+        $builder = Pdf::html($html)
+            ->format($paper['size'] ?? 'a4');
+
+        if (($paper['orientation'] ?? 'portrait') === 'landscape') {
+            $builder->landscape();
+        }
+
+        if ($this->driver !== null) {
+            $builder->driver($this->driver);
+        }
+
+        return $builder->generatePdfContent();
     }
 
     public function stream(?string $filename = null): Response
@@ -249,7 +252,7 @@ class PdfInvoice implements Attachable
         return new Response($output, 200, [
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => HeaderUtils::makeDisposition('attachment', $filename, Str::ascii($filename)),
-            'Content-Length' => strlen($output ?? ''),
+            'Content-Length' => strlen($output),
         ]);
     }
 

@@ -15,6 +15,7 @@ Try out [the interactive demo](https://elegantly.dev/laravel-invoices) to explor
 
 ## Table of Contents
 
+- [Upgrade Guide](#upgrade-guide)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [The `PdfInvoice` Class](#the-pdfinvoice-class)
@@ -58,11 +59,32 @@ Try out [the interactive demo](https://elegantly.dev/laravel-invoices) to explor
 - [Credits](#credits)
 - [License](#license)
 
+## Upgrade Guide
+
+### From 5.x → 6.x: PDF rendering moved to spatie/laravel-pdf
+
+This release replaces direct dompdf usage with [spatie/laravel-pdf](https://spatie.be/docs/laravel-pdf). One install, six drivers, one API.
+
+**Breaking changes:**
+
+- `PdfInvoice::pdf(): \Dompdf\Dompdf` has been **removed**. The method previously returned the raw `Dompdf` instance for advanced customization. Replacements:
+  - For binary output: `PdfInvoice::getPdfOutput(): string` (now returns the raw PDF bytes via spatie).
+  - For driver-specific tweaks: configure them in `config/laravel-pdf.php` (spatie's config), not ours.
+- The `invoices.pdf.options` config key (dompdf options) is no longer read. Move dompdf settings into spatie's `config/laravel-pdf.php` under its `dompdf` block, or set the equivalent environment variables (`LARAVEL_PDF_DOMPDF_REMOTE_ENABLED`, `LARAVEL_PDF_DOMPDF_CHROOT`).
+- The new `spatie/laravel-pdf` package is now required.
+
+**Migration steps:**
+
+1. Run `composer update elegantly/laravel-invoices`.
+2. Add `LARAVEL_PDF_DRIVER=dompdf` to your `.env` (spatie's own default is `browsershot`, which requires Chromium).
+3. If you were calling `$pdfInvoice->pdf()` directly, switch to `$pdfInvoice->getPdfOutput()` (raw bytes) or `$pdfInvoice->stream()` / `->download()` (HTTP responses).
+4. If you set custom dompdf options in `config/invoices.php`, publish spatie's config (`php artisan vendor:publish --tag="laravel-pdf-config"`) and move them across.
+
 ## Requirements
 
-- PHP 8.1+
+- PHP 8.3+
 - Laravel 11.0+
-- `dompdf/dompdf` for PDF rendering
+- `spatie/laravel-pdf` for PDF rendering (any of its drivers — `dompdf` by default, no system dependencies)
 - `elegantly/laravel-money` for money computation which use `brick\money` under the hood
 
 ## Installation
@@ -85,6 +107,24 @@ You can publish the config file with:
 ```bash
 php artisan vendor:publish --tag="invoices-config"
 ```
+
+### Configuring the PDF driver
+
+PDF rendering is delegated to [spatie/laravel-pdf](https://spatie.be/docs/laravel-pdf), which ships six drivers: `dompdf`, `browsershot`, `chrome`, `cloudflare`, `gotenberg`, and `weasyprint`.
+
+Spatie's default driver is `browsershot` (requires Node.js + Chromium). For invoices we recommend `dompdf` — it's pure PHP with no system dependencies. Set it in your `.env`:
+
+```dotenv
+LARAVEL_PDF_DRIVER=dompdf
+```
+
+To tune driver-specific options (dompdf chroot/remote, browsershot binaries, Cloudflare/Gotenberg credentials, etc.), publish spatie's config:
+
+```bash
+php artisan vendor:publish --tag="laravel-pdf-config"
+```
+
+See the [Choosing a PDF Driver](#choosing-a-pdf-driver) section for tradeoffs and how to override the driver per invoice.
 
 This is the contents of the published config file:
 
@@ -169,40 +209,15 @@ return [
      */
     'default_currency' => 'USD',
 
+    /**
+     * PDF rendering is delegated to spatie/laravel-pdf.
+     * Driver selection lives in spatie's own config (`config/laravel-pdf.php` / LARAVEL_PDF_DRIVER).
+     */
     'pdf' => [
 
         'paper' => [
             'size' => 'a4',
             'orientation' => 'portrait',
-        ],
-
-        /**
-         * Default DOM PDF options
-         *
-         * @see Available options https://github.com/barryvdh/laravel-dompdf#configuration
-         */
-        'options' => [
-            // Required to load external CSS or images (e.g., from a URL or storage path)
-            'isRemoteEnabled' => true,
-
-            // Security: Keep false unless you specifically need to execute PHP inside the PDF template
-            'isPhpEnabled' => false,
-
-            // Adjusts line-height rendering to prevent text from looking vertically "cramped"
-            'fontHeightRatio' => 0.8,
-
-            /**
-             * Supported values are: 'DejaVu Sans', 'Helvetica', 'Courier', 'Times', 'Symbol', 'ZapfDingbats'.
-             */
-            'defaultFont' => 'Helvetica',
-
-            // Custom font storage: Required if using Google Fonts
-            'fontDir' => storage_path('app/dompdf'),
-            'fontCache' => storage_path('app/dompdf'),
-
-            // System paths for temporary file processing and security boundaries
-            'tempDir' => sys_get_temp_dir(),
-            'chroot' => realpath(base_path()), // Limits Dompdf's file access to the project root
         ],
 
         /**
@@ -619,9 +634,28 @@ To dynamically generate QR codes, I recommend using the [`chillerlan/php-qrcode`
 
 ### Customization
 
+#### Choosing a PDF Driver
+
+The active driver is set in spatie's config (`LARAVEL_PDF_DRIVER` env or `config/laravel-pdf.php`).
+
+| Driver        | Extra install                                  | Notes                                                                      |
+| ------------- | ---------------------------------------------- | -------------------------------------------------------------------------- |
+| `dompdf`      | `dompdf/dompdf` (already pulled in)            | Pure PHP, zero system deps. Best default for invoices. Limited modern CSS. |
+| `browsershot` | `composer require spatie/browsershot` + Node + Chromium | Full Chromium rendering — real Tailwind, web fonts, SVG, JS.        |
+| `chrome`      | `composer require chrome-php/chrome` + Chromium binary | Headless Chrome via the chrome-php client.                          |
+| `cloudflare`  | Cloudflare Browser Rendering account            | Renders via Cloudflare's API. No local binaries.                          |
+| `gotenberg`   | A running Gotenberg service (Docker)            | Best for high-volume / centralized rendering.                             |
+| `weasyprint`  | `composer require pontedilana/php-weasyprint` + WeasyPrint binary | Python-based PDF engine.                          |
+
+Per-invoice override (takes precedence over spatie's global driver):
+
+```php
+$invoice->toPdfInvoice()->driver('browsershot')->download();
+```
+
 #### Customizing Fonts
 
-See the [Dompdf font guide](https://github.com/dompdf/dompdf/wiki/About-Fonts-and-Character-Encoding).
+Under the `dompdf` driver, see the [Dompdf font guide](https://github.com/dompdf/dompdf/wiki/About-Fonts-and-Character-Encoding) and configure font paths in spatie's `config/laravel-pdf.php` dompdf block (or via the system itself — spatie's dompdf driver uses dompdf's default options). Under `browsershot` / `chrome`, regular CSS `@font-face` and Google Fonts work natively.
 
 #### Customizing the Invoice Template
 

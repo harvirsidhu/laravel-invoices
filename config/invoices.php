@@ -82,40 +82,21 @@ return [
      */
     'default_currency' => 'USD',
 
+    /**
+     * PDF rendering is delegated to spatie/laravel-pdf.
+     * The driver (dompdf, browsershot, chrome, cloudflare, gotenberg, weasyprint)
+     * is selected in spatie's own config (`config/laravel-pdf.php` or LARAVEL_PDF_DRIVER env).
+     *
+     * Recommended for zero-system-dep installs:
+     *     LARAVEL_PDF_DRIVER=dompdf
+     *
+     * Per-invoice override: `$invoice->toPdfInvoice()->driver('browsershot')`.
+     */
     'pdf' => [
 
         'paper' => [
             'size' => 'a4',
             'orientation' => 'portrait',
-        ],
-
-        /**
-         * Default DOM PDF options
-         *
-         * @see Available options https://github.com/barryvdh/laravel-dompdf#configuration
-         */
-        'options' => [
-            // Required to load external CSS or images (e.g., from a URL or storage path)
-            'isRemoteEnabled' => true,
-
-            // Security: Keep false unless you specifically need to execute PHP inside the PDF template
-            'isPhpEnabled' => false,
-
-            // Adjusts line-height rendering to prevent text from looking vertically "cramped"
-            'fontHeightRatio' => 0.8,
-
-            /**
-             * Supported values are: 'DejaVu Sans', 'Helvetica', 'Courier', 'Times', 'Symbol', 'ZapfDingbats'.
-             */
-            'defaultFont' => 'Helvetica',
-
-            // Custom font storage: Required if using Google Fonts
-            'fontDir' => storage_path('app/dompdf'),
-            'fontCache' => storage_path('app/dompdf'),
-
-            // System paths for temporary file processing and security boundaries
-            'tempDir' => sys_get_temp_dir(),
-            'chroot' => realpath(base_path()), // Limits Dompdf's file access to the project root
         ],
 
         /**

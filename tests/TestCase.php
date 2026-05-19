@@ -7,6 +7,7 @@ namespace Elegantly\Invoices\Tests;
 use Elegantly\Invoices\InvoiceServiceProvider;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Orchestra\Testbench\TestCase as Orchestra;
+use Spatie\LaravelPdf\PdfServiceProvider;
 
 class TestCase extends Orchestra
 {
@@ -23,6 +24,7 @@ class TestCase extends Orchestra
     {
         return [
             InvoiceServiceProvider::class,
+            PdfServiceProvider::class,
         ];
     }
 
@@ -30,6 +32,7 @@ class TestCase extends Orchestra
     {
         config()->set('database.default', 'testing');
         config()->set('money.default_currency', 'USD');
+        config()->set('laravel-pdf.driver', 'dompdf');
 
         $migration = include __DIR__.'/../database/migrations/create_invoices_table.php.stub';
         $migration->up();
